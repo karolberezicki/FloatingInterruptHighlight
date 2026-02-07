@@ -1,0 +1,54 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+
+    <Script file="FloatingInterruptHighlight.lua"/>
+
+    <Frame name="FIHFrame" inherits="BackdropTemplate" mixin="FIHFrameMixin" parent="UIParent" movable="true" enableMouse="false" clampedToScreen="true" hidden="true">
+        <Size x="48" y="48"/>
+        <Anchors>
+            <Anchor point="CENTER"/>
+        </Anchors>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture parentKey="Icon" setAllPoints="true"/>
+            </Layer>
+        </Layers>
+        <Frames>
+            <Frame parentKey="GlowOverlay" mixin="FIHGlowMixin" hidden="true" setAllPoints="true">
+                <Layers>
+                    <Layer level="ARTWORK">
+                        <Texture parentKey="ProcLoopFlipbook" atlas="UI-HUD-ActionBar-Proc-Loop-Flipbook">
+                            <Anchors>
+                                <Anchor point="CENTER"/>
+                            </Anchors>
+                        </Texture>
+                    </Layer>
+                    <Layer level="OVERLAY">
+                        <FontString parentKey="Timer" justifyH="LEFT" inherits="NumberFontNormal" hidden="true">
+                            <Anchors>
+                                <Anchor point="BOTTOMLEFT" x="5" y="5"/>
+                            </Anchors>
+                        </FontString>
+                    </Layer>
+                </Layers>
+                <Animations>
+                    <AnimationGroup parentKey="ProcLoop" looping="REPEAT">
+                        <FlipBook parentKey="FlipAnim" childKey="ProcLoopFlipbook" duration="1" order="0" flipBookRows="6" flipBookColumns="5" flipBookFrames="30" flipBookFrameWidth="0" flipBookFrameHeight="0"/>
+                    </AnimationGroup>
+                </Animations>
+                <Scripts>
+                    <OnHide method="OnHide"/>
+                </Scripts>
+            </Frame>
+            <Cooldown parentKey="Cooldown" enableMouse="false" inherits="CooldownFrameTemplate" setAllPoints="true"/>
+        </Frames>
+        <Scripts>
+            <OnLoad method="OnLoad"/>
+            <OnEvent method="OnEvent"/>
+            <OnDragStart method="OnDragStart"/>
+            <OnDragStop method="OnDragStop"/>
+        </Scripts>
+    </Frame>
+
+</Ui>

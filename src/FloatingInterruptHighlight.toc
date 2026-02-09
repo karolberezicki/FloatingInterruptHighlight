@@ -1,11 +1,11 @@
-## Interface: 120000
+## Interface: 120000, 120001
 ## Title: Floating Interrupt Highlight
 ## Notes: Floating icon that highlights when target is casting an interruptible spell
 ## IconTexture: Interface\Icons\ability_kick
 ## SavedVariables: FloatingInterruptHighlightDB
 ## OptionalDeps: Ace3, Masque
 ## Author: Senoy
-## Version: 1.0.1
+## Version: 1.0.2
 ## Category: Combat
 
 Libs\LibStub\LibStub.lua

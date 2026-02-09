@@ -54,7 +54,7 @@ Runtime: events → UpdateCastState / UpdateCooldown / UpdateVisibility / Detect
 
 ### Blizzard Secrets
 
-Two pieces of combat data are protected as "secrets" in TWW:
+Two pieces of combat data are protected as "secrets" (since 12.0):
 
 1. **`notInterruptible`** — returned by `UnitCastingInfo`/`UnitChannelInfo` but cannot be used in show/hide branching. Handled with `SetAlphaFromBoolean(notInterruptible, 0, 1)` which sets alpha to 0 (invisible) for uninterruptible casts and 1 (visible) for interruptible casts without conditional logic.
 
@@ -78,7 +78,7 @@ Simple two-state model:
 
 ### Cast State Detection
 
-`UpdateCastState()` checks `UnitCastingInfo("target")` then `UnitChannelInfo("target")`. Uses TWW-era `UnitCastingDuration`/`UnitChannelDuration` which return duration objects with `:GetRemainingDuration()` and `:EvaluateRemainingDuration()`. Nil-guarded against race conditions where the cast ends between the info and duration calls.
+`UpdateCastState()` checks `UnitCastingInfo("target")` then `UnitChannelInfo("target")`. Uses `UnitCastingDuration`/`UnitChannelDuration` which return duration objects with `:GetRemainingDuration()` and `:EvaluateRemainingDuration()`. Nil-guarded against race conditions where the cast ends between the info and duration calls.
 
 ### Masque Integration
 

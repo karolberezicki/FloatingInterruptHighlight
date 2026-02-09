@@ -257,12 +257,11 @@ function FIHFrameMixin:GetInterruptCooldownRemaining()
     return remaining
 end
 
--- Returns true if the interrupt will be off cooldown before the cast ends.
-function FIHFrameMixin:CanInterruptBeforeCastEnds(duration)
-    local cdRemaining = self:GetInterruptCooldownRemaining()
-    local castRemaining = duration:GetRemainingDuration()
-    if cdRemaining <= 0 then return true end
-    return cdRemaining < castRemaining
+-- Returns true if the interrupt is off cooldown.
+-- Note: duration:GetRemainingDuration() is a secret value and cannot
+-- be compared, so we can only check whether the interrupt is currently ready.
+function FIHFrameMixin:CanInterrupt()
+    return self:GetInterruptCooldownRemaining() <= 0
 end
 
 --[[------------------------------------------------------------------------]]--
@@ -281,7 +280,7 @@ function FIHFrameMixin:UpdateCastState()
     if name then
         local duration = UnitCastingDuration("target")
         if duration then
-            if self:CanInterruptBeforeCastEnds(duration) then
+            if self:CanInterrupt() then
                 self:ShowForCast(notInterruptible)
                 self.GlowOverlay:Update(true, notInterruptible, duration)
             else
@@ -299,7 +298,7 @@ function FIHFrameMixin:UpdateCastState()
     if name then
         local duration = UnitChannelDuration("target")
         if duration then
-            if self:CanInterruptBeforeCastEnds(duration) then
+            if self:CanInterrupt() then
                 self:ShowForCast(notInterruptible)
                 self.GlowOverlay:Update(true, notInterruptible, duration)
             else
@@ -324,13 +323,18 @@ end
 function FIHFrameMixin:UpdateCooldown()
     if not self.interruptSpellID or not self:IsShown() then return end
 
-    local cdInfo = self.db.cooldown.showSwipe and C_Spell.GetSpellCooldown(self.interruptSpellID)
-    if cdInfo then
-        self.Cooldown.currentCooldownType = COOLDOWN_TYPE_NORMAL
-        self.Cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration, cdInfo.modRate)
-    else
-        self.Cooldown:Clear()
+    -- C_Spell.GetSpellCooldown() returns secret values for interrupt spells
+    -- so use our manually tracked cooldown instead.
+    if self.db.cooldown.showSwipe and self.interruptCdDuration > 0 then
+        local remaining = (self.interruptCdStart + self.interruptCdDuration) - GetTime()
+        if remaining > 0 then
+            self.Cooldown.currentCooldownType = COOLDOWN_TYPE_NORMAL
+            self.Cooldown:SetCooldown(self.interruptCdStart, self.interruptCdDuration)
+            return
+        end
     end
+
+    self.Cooldown:Clear()
 end
 
 --[[------------------------------------------------------------------------]]--

@@ -23,6 +23,8 @@ local frameStrata = {
     "TOOLTIP",
 }
 
+local REACTION_TIME = 0.2
+
 --[[------------------------------------------------------------------------]]--
 --  Interrupt Spell Table (from ActionBarInterruptHighlight/Controller.lua)
 --[[------------------------------------------------------------------------]]--
@@ -42,16 +44,19 @@ local InterruptSpells = {
     [  1766] = 15,      -- Kick (Rogue)
     [ 57994] = 12,      -- Wind Shear (Shaman)
     [ 19647] = 24,      -- Spell Lock (Warlock Felhunter Pet)
+    [119910] = 24,      -- Spell Lock (Warlock Command Demon)
+    [132409] = 24,      -- Spell Lock (Warlock Grimoire of Sacrifice)
     [ 89766] = 30,      -- Axe Toss (Warlock Felguard Pet)
+    [119914] = 30,      -- Axe Toss (Warlock Command Demon)
     [  6552] = 15,      -- Pummel (Warrior)
-    [351338] = 40,      -- Quell (Evoker)
+    [351338] = 20,      -- Quell (Evoker)
 }
 
 -- Ordered list for detection (first known wins)
 local InterruptSpellIDs = {
      47528, 183752,  78675, 106839, 147362, 187707,
       2139, 116705,  96231,  15487,   1766,  57994,
-     19647,  89766,   6552, 351338,
+     19647, 119910, 132409,  89766, 119914,   6552, 351338,
 }
 
 --[[------------------------------------------------------------------------]]--
@@ -240,8 +245,8 @@ end
 --  and apply the base cooldown duration from our lookup table.
 --[[------------------------------------------------------------------------]]--
 
-function FIHFrameMixin:OnInterruptUsed()
-    local baseCd = InterruptSpells[self.interruptSpellID]
+function FIHFrameMixin:OnInterruptUsed(spellID)
+    local baseCd = InterruptSpells[spellID]
     if not baseCd then return end
     self.interruptCdStart = GetTime()
     self.interruptCdDuration = baseCd
@@ -261,7 +266,26 @@ end
 -- Note: duration:GetRemainingDuration() is a secret value and cannot
 -- be compared, so we can only check whether the interrupt is currently ready.
 function FIHFrameMixin:CanInterrupt()
-    return self:GetInterruptCooldownRemaining() <= 0
+    return self:GetInterruptCooldownRemaining() <= REACTION_TIME
+end
+
+function FIHFrameMixin:ScheduleCooldownRecheck()
+    self:CancelCooldownRecheck()
+    local remaining = self:GetInterruptCooldownRemaining() - REACTION_TIME
+    if remaining > 0 then
+        self.cdRecheckTimer = C_Timer.NewTimer(remaining, function()
+            self.cdRecheckTimer = nil
+            self:UpdateCastState()
+            self:UpdateCooldown()
+        end)
+    end
+end
+
+function FIHFrameMixin:CancelCooldownRecheck()
+    if self.cdRecheckTimer then
+        self.cdRecheckTimer:Cancel()
+        self.cdRecheckTimer = nil
+    end
 end
 
 --[[------------------------------------------------------------------------]]--
@@ -269,6 +293,8 @@ end
 --[[------------------------------------------------------------------------]]--
 
 function FIHFrameMixin:UpdateCastState()
+    self:CancelCooldownRecheck()
+
     if not self.interruptSpellID then
         self.GlowOverlay:Update(false)
         return
@@ -286,6 +312,7 @@ function FIHFrameMixin:UpdateCastState()
             else
                 self:HideForCast()
                 self.GlowOverlay:Update(false)
+                self:ScheduleCooldownRecheck()
             end
         else
             self:HideForCast()
@@ -304,6 +331,7 @@ function FIHFrameMixin:UpdateCastState()
             else
                 self:HideForCast()
                 self.GlowOverlay:Update(false)
+                self:ScheduleCooldownRecheck()
             end
         else
             self:HideForCast()
@@ -513,8 +541,8 @@ function FIHFrameMixin:OnEvent(event, ...)
     -- Interrupt used by player — record usage time + base cooldown
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, _, spellID = ...
-        if unit == "player" and spellID == self.interruptSpellID then
-            self:OnInterruptUsed()
+        if (unit == "player" or unit == "pet") and InterruptSpells[spellID] then
+            self:OnInterruptUsed(spellID)
             self:UpdateCastState()
         end
 

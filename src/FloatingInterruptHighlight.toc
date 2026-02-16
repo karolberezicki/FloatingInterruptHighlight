@@ -5,7 +5,7 @@
 ## SavedVariables: FloatingInterruptHighlightDB
 ## OptionalDeps: Ace3, Masque
 ## Author: Senoy
-## Version: 1.0.3
+## Version: 1.0.4
 ## Category: Combat
 
 Libs\LibStub\LibStub.lua

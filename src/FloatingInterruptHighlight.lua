@@ -12,7 +12,6 @@ local ACR = LibStub("AceConfigRegistry-3.0")
 local Masque = LibStub("Masque", true)
 
 local C_Spell = C_Spell
-local GetTime = GetTime
 
 local frameStrata = {
     "BACKGROUND",
@@ -26,37 +25,30 @@ local frameStrata = {
 local REACTION_TIME = 0.2
 
 --[[------------------------------------------------------------------------]]--
---  Interrupt Spell Table (from ActionBarInterruptHighlight/Controller.lua)
+--  Interrupt Spell IDs (from ActionBarInterruptHighlight/Controller.lua)
 --[[------------------------------------------------------------------------]]--
-
--- spellID → base cooldown in seconds
-local InterruptSpells = {
-    [ 47528] = 15,      -- Mind Freeze (Death Knight)
-    [183752] = 15,      -- Disrupt (Demon Hunter)
-    [ 78675] = 60,      -- Solar Beam (Druid)
-    [106839] = 15,      -- Skull Bash (Druid)
-    [147362] = 24,      -- Counter Shot (Hunter)
-    [187707] = 15,      -- Muzzle (Hunter)
-    [  2139] = 24,      -- Counterspell (Mage)
-    [116705] = 15,      -- Spear Hand Strike (Monk)
-    [ 96231] = 15,      -- Rebuke (Paladin)
-    [ 15487] = 45,      -- Silence (Priest)
-    [  1766] = 15,      -- Kick (Rogue)
-    [ 57994] = 12,      -- Wind Shear (Shaman)
-    [ 19647] = 24,      -- Spell Lock (Warlock Felhunter Pet)
-    [119910] = 24,      -- Spell Lock (Warlock Command Demon)
-    [132409] = 24,      -- Spell Lock (Warlock Grimoire of Sacrifice)
-    [ 89766] = 30,      -- Axe Toss (Warlock Felguard Pet)
-    [119914] = 30,      -- Axe Toss (Warlock Command Demon)
-    [  6552] = 15,      -- Pummel (Warrior)
-    [351338] = 20,      -- Quell (Evoker)
-}
 
 -- Ordered list for detection (first known wins)
 local InterruptSpellIDs = {
-     47528, 183752,  78675, 106839, 147362, 187707,
-      2139, 116705,  96231,  15487,   1766,  57994,
-     19647, 119910, 132409,  89766, 119914,   6552, 351338,
+     47528,  -- Mind Freeze (Death Knight)
+    183752,  -- Disrupt (Demon Hunter)
+     78675,  -- Solar Beam (Druid)
+    106839,  -- Skull Bash (Druid)
+    147362,  -- Counter Shot (Hunter)
+    187707,  -- Muzzle (Hunter)
+      2139,  -- Counterspell (Mage)
+    116705,  -- Spear Hand Strike (Monk)
+     96231,  -- Rebuke (Paladin)
+     15487,  -- Silence (Priest)
+      1766,  -- Kick (Rogue)
+     57994,  -- Wind Shear (Shaman)
+     19647,  -- Spell Lock (Warlock Felhunter Pet)
+    119910,  -- Spell Lock (Warlock Command Demon)
+    132409,  -- Spell Lock (Warlock Grimoire of Sacrifice)
+     89766,  -- Axe Toss (Warlock Felguard Pet)
+    119914,  -- Axe Toss (Warlock Command Demon)
+      6552,  -- Pummel (Warrior)
+    351338,  -- Quell (Evoker)
 }
 
 --[[------------------------------------------------------------------------]]--
@@ -69,6 +61,20 @@ timerColorCurve:AddPoint(0.0,  CreateColor(1, 0.5, 0.5, 1))
 timerColorCurve:AddPoint(3.0,  CreateColor(1, 1,   0.5, 1))
 timerColorCurve:AddPoint(3.01, CreateColor(1, 1,   1,   1))
 timerColorCurve:AddPoint(10.0, CreateColor(1, 1,   1,   1))
+
+-- Builds a cooldown readiness curve that evaluates the remaining interrupt
+-- cooldown via C_Spell.GetSpellCooldownDuration() (secret-aware API).
+-- Returns db.alpha (visible) when ≤ REACTION_TIME remains, 0 when on cooldown.
+-- The user's alpha is baked into the curve because secret values cannot be
+-- used in arithmetic with regular numbers.
+local function CreateCdReadyCurve(alpha)
+    local curve = C_CurveUtil.CreateCurve()
+    curve:AddPoint(0.0, alpha)
+    curve:AddPoint(REACTION_TIME, alpha)
+    curve:AddPoint(REACTION_TIME + 0.1, 0)
+    curve:AddPoint(120, 0)
+    return curve
+end
 
 --[[------------------------------------------------------------------------]]--
 --  FIHGlowMixin — Glow overlay behavior
@@ -148,8 +154,6 @@ FIHFrameMixin = {}
 
 function FIHFrameMixin:OnLoad()
     self.interruptSpellID = nil
-    self.interruptCdStart = 0
-    self.interruptCdDuration = 0
 
     self:RegisterEvent("PLAYER_LOGIN")
     self:RegisterForDrag("LeftButton")
@@ -204,9 +208,6 @@ function FIHFrameMixin:Initialize()
     -- Cooldown event
     self:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 
-    -- Track interrupt usage (cooldown is secret, so we record GetTime + base duration)
-    self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-
     self:DetectInterruptSpell()
     self:ApplyOptions()
 end
@@ -217,12 +218,10 @@ end
 
 function FIHFrameMixin:DetectInterruptSpell()
     self.interruptSpellID = nil
-    self.interruptCdStart = 0
-    self.interruptCdDuration = 0
 
     for _, spellID in ipairs(InterruptSpellIDs) do
         if C_SpellBook.IsSpellInSpellBook(spellID) then
-            self.interruptSpellID = spellID
+            self.interruptSpellID = C_Spell.GetOverrideSpell(spellID)
             break
         end
     end
@@ -238,63 +237,10 @@ function FIHFrameMixin:DetectInterruptSpell()
 end
 
 --[[------------------------------------------------------------------------]]--
---  Interrupt Cooldown Tracking
---
---  The actual cooldown of interrupt spells is secret (C_Spell.GetSpellCooldown
---  only reports the GCD).  We track usage ourselves via UNIT_SPELLCAST_SUCCEEDED
---  and apply the base cooldown duration from our lookup table.
---[[------------------------------------------------------------------------]]--
-
-function FIHFrameMixin:OnInterruptUsed(spellID)
-    local baseCd = InterruptSpells[spellID]
-    if not baseCd then return end
-    self.interruptCdStart = GetTime()
-    self.interruptCdDuration = baseCd
-end
-
-function FIHFrameMixin:GetInterruptCooldownRemaining()
-    if self.interruptCdDuration == 0 then return 0 end
-    local remaining = (self.interruptCdStart + self.interruptCdDuration) - GetTime()
-    if remaining <= 0 then
-        self.interruptCdDuration = 0
-        return 0
-    end
-    return remaining
-end
-
--- Returns true if the interrupt is off cooldown.
--- Note: duration:GetRemainingDuration() is a secret value and cannot
--- be compared, so we can only check whether the interrupt is currently ready.
-function FIHFrameMixin:CanInterrupt()
-    return self:GetInterruptCooldownRemaining() <= REACTION_TIME
-end
-
-function FIHFrameMixin:ScheduleCooldownRecheck()
-    self:CancelCooldownRecheck()
-    local remaining = self:GetInterruptCooldownRemaining() - REACTION_TIME
-    if remaining > 0 then
-        self.cdRecheckTimer = C_Timer.NewTimer(remaining, function()
-            self.cdRecheckTimer = nil
-            self:UpdateCastState()
-            self:UpdateCooldown()
-        end)
-    end
-end
-
-function FIHFrameMixin:CancelCooldownRecheck()
-    if self.cdRecheckTimer then
-        self.cdRecheckTimer:Cancel()
-        self.cdRecheckTimer = nil
-    end
-end
-
---[[------------------------------------------------------------------------]]--
---  Cast State Detection (from Controller.lua:120-138)
+--  Cast State Detection
 --[[------------------------------------------------------------------------]]--
 
 function FIHFrameMixin:UpdateCastState()
-    self:CancelCooldownRecheck()
-
     if not self.interruptSpellID then
         self.GlowOverlay:Update(false)
         return
@@ -306,14 +252,8 @@ function FIHFrameMixin:UpdateCastState()
     if name then
         local duration = UnitCastingDuration("target")
         if duration then
-            if self:CanInterrupt() then
-                self:ShowForCast(notInterruptible)
-                self.GlowOverlay:Update(true, notInterruptible, duration)
-            else
-                self:HideForCast()
-                self.GlowOverlay:Update(false)
-                self:ScheduleCooldownRecheck()
-            end
+            self:ShowForCast(notInterruptible)
+            self.GlowOverlay:Update(true, notInterruptible, duration)
         else
             self:HideForCast()
             self.GlowOverlay:Update(false)
@@ -325,14 +265,8 @@ function FIHFrameMixin:UpdateCastState()
     if name then
         local duration = UnitChannelDuration("target")
         if duration then
-            if self:CanInterrupt() then
-                self:ShowForCast(notInterruptible)
-                self.GlowOverlay:Update(true, notInterruptible, duration)
-            else
-                self:HideForCast()
-                self.GlowOverlay:Update(false)
-                self:ScheduleCooldownRecheck()
-            end
+            self:ShowForCast(notInterruptible)
+            self.GlowOverlay:Update(true, notInterruptible, duration)
         else
             self:HideForCast()
             self.GlowOverlay:Update(false)
@@ -351,13 +285,11 @@ end
 function FIHFrameMixin:UpdateCooldown()
     if not self.interruptSpellID or not self:IsShown() then return end
 
-    -- C_Spell.GetSpellCooldown() returns secret values for interrupt spells
-    -- so use our manually tracked cooldown instead.
-    if self.db.cooldown.showSwipe and self.interruptCdDuration > 0 then
-        local remaining = (self.interruptCdStart + self.interruptCdDuration) - GetTime()
-        if remaining > 0 then
+    if self.db.cooldown.showSwipe then
+        local cdDuration = C_Spell.GetSpellCooldownDuration(self.interruptSpellID)
+        if cdDuration then
             self.Cooldown.currentCooldownType = COOLDOWN_TYPE_NORMAL
-            self.Cooldown:SetCooldown(self.interruptCdStart, self.interruptCdDuration)
+            self.Cooldown:SetCooldown(cdDuration:GetStartTime(), cdDuration:GetTotalDuration())
             return
         end
     end
@@ -376,7 +308,13 @@ end
 function FIHFrameMixin:ShowForCast(notInterruptible)
     if not self.db.locked then return end
     self:SetShown(true)
-    self:SetAlphaFromBoolean(notInterruptible, 0, self.db.alpha)
+    local cdDuration = C_Spell.GetSpellCooldownDuration(self.interruptSpellID)
+    if cdDuration then
+        local cdAlpha = cdDuration:EvaluateRemainingDuration(self.cdReadyCurve)
+        self:SetAlphaFromBoolean(notInterruptible, 0, cdAlpha)
+    else
+        self:SetAlphaFromBoolean(notInterruptible, 0, self.db.alpha)
+    end
 end
 
 function FIHFrameMixin:HideForCast()
@@ -447,6 +385,7 @@ function FIHFrameMixin:ApplyOptions()
     local db = self.db
     local size = db.iconSize
 
+    self.cdReadyCurve = CreateCdReadyCurve(db.alpha)
     self:Lock(db.locked)
     self:SetSize(size, size)
     self:SetAlpha(db.alpha)
@@ -535,14 +474,6 @@ function FIHFrameMixin:OnEvent(event, ...)
         local unit = ...
         if unit == "player" then
             self:DetectInterruptSpell()
-            self:UpdateCastState()
-        end
-
-    -- Interrupt used by player — record usage time + base cooldown
-    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local unit, _, spellID = ...
-        if (unit == "player" or unit == "pet") and InterruptSpells[spellID] then
-            self:OnInterruptUsed(spellID)
             self:UpdateCastState()
         end
 

@@ -56,29 +56,29 @@ Runtime: events → UpdateCastState / UpdateCooldown / UpdateVisibility / Detect
 
 Two pieces of combat data are protected as "secrets" (since 12.0):
 
-1. **`notInterruptible`** — returned by `UnitCastingInfo`/`UnitChannelInfo` but cannot be used in show/hide branching. Handled with `SetAlphaFromBoolean(notInterruptible, 0, 1)` which sets alpha to 0 (invisible) for uninterruptible casts and 1 (visible) for interruptible casts without conditional logic.
+1. **`notInterruptible`** — returned by `UnitCastingInfo`/`UnitChannelInfo` but cannot be used in show/hide branching. Handled with `SetAlphaFromBoolean(notInterruptible, 0, alpha)` which sets alpha to 0 (invisible) for uninterruptible casts and `alpha` (visible) for interruptible casts without conditional logic.
 
-2. **Interrupt cooldown** — `C_Spell.GetSpellCooldown()` only returns the GCD (1.5s) for interrupt spells, never the real cooldown. Tracked manually:
-   - `UNIT_SPELLCAST_SUCCEEDED` with `unit == "player"` and matching `spellID` triggers `OnInterruptUsed()`
-   - `OnInterruptUsed()` stores `GetTime()` + hard-coded base cooldown from the `InterruptSpells` lookup table
-   - `CanInterruptBeforeCastEnds(duration)` compares remaining cooldown against `duration:GetRemainingDuration()`
-   - Note: talent-modified cooldowns will be slightly inaccurate (uses base values)
+2. **Interrupt cooldown** — `C_Spell.GetSpellCooldown()` only returns the GCD (1.5s) for interrupt spells, but `C_Spell.GetSpellCooldownDuration()` returns a secret duration object with the real cooldown. The duration object's methods (`:GetStartTime()`, `:GetTotalDuration()`, `:GetRemainingDuration()`, `:EvaluateRemainingDuration(curve)`) all return secret values that can be passed to secret-aware APIs like `SetAlpha`, `SetAlphaFromBoolean`, and `Cooldown:SetCooldown`.
+   - `CreateCdReadyCurve(alpha)` builds a curve that evaluates to `alpha` when the cooldown has ≤ `REACTION_TIME` (0.2s) remaining, and 0 when on cooldown. The user's `db.alpha` is baked into the curve because secret values cannot be used in arithmetic with regular numbers.
+   - `ShowForCast()` queries `C_Spell.GetSpellCooldownDuration()` each call and evaluates remaining duration against the curve, combining both secrets (notInterruptible + cooldown readiness) via `SetAlphaFromBoolean(notInterruptible, 0, cdAlpha)`.
+   - `UpdateCooldown()` uses `cdDuration:GetStartTime()` and `:GetTotalDuration()` to drive the cooldown swipe display.
+   - The curve is rebuilt in `ApplyOptions()` whenever the user's alpha setting changes.
 
 ### Interrupt Spell Detection
 
-`InterruptSpells` maps `spellID → baseCooldownSeconds` for all 16 class/pet interrupts. `InterruptSpellIDs` is a flat ordered list — `DetectInterruptSpell()` iterates it and picks the first spell found via `C_SpellBook.IsSpellInSpellBook()`. Re-runs on `SPELLS_CHANGED` (talent swap) and `UNIT_PET` (pet summon/dismiss).
+`InterruptSpellIDs` is a flat ordered list of all class/pet interrupt spell IDs. `DetectInterruptSpell()` iterates it and picks the first spell found via `C_SpellBook.IsSpellInSpellBook()`, then resolves it through `C_Spell.GetOverrideSpell()` to handle talent overrides. Re-runs on `SPELLS_CHANGED` (talent swap) and `UNIT_PET` (pet summon/dismiss).
 
 ### Visibility Model
 
 Simple two-state model:
 - **Unlocked** — frame is always visible with mouse enabled for dragging
-- **Locked** — frame is hidden by default, shown only when target is casting and `CanInterruptBeforeCastEnds()` returns true
+- **Locked** — frame is hidden by default, shown when target is casting. Alpha is controlled by two secrets: `notInterruptible` (0 if uninterruptible) and cooldown readiness via `cdReadyCurve` (0 if on cooldown, `db.alpha` if ready). The frame is effectively invisible (alpha 0) when the cast is uninterruptible or the interrupt is on cooldown.
 
 `ShowForCast`/`HideForCast` are no-ops when unlocked (so dragging isn't disrupted by cast events).
 
 ### Cast State Detection
 
-`UpdateCastState()` checks `UnitCastingInfo("target")` then `UnitChannelInfo("target")`. Uses `UnitCastingDuration`/`UnitChannelDuration` which return duration objects with `:GetRemainingDuration()` and `:EvaluateRemainingDuration()`. Nil-guarded against race conditions where the cast ends between the info and duration calls.
+`UpdateCastState()` checks `UnitCastingInfo("target")` then `UnitChannelInfo("target")`. Uses `UnitCastingDuration`/`UnitChannelDuration` which return duration objects with `:GetRemainingDuration()` and `:EvaluateRemainingDuration()`. Nil-guarded against race conditions where the cast ends between the info and duration calls. When a cast is detected, always calls `ShowForCast()` — visibility is determined by alpha (via secrets), not by show/hide branching.
 
 ### Masque Integration
 
@@ -99,7 +99,6 @@ Built with AceConfig-3.0. Sections: General, Display (icon/border), Cooldown, Po
 | Cast tracking | `PLAYER_TARGET_CHANGED`, `UNIT_SPELLCAST_START/STOP/DELAYED/FAILED/INTERRUPTED/INTERRUPTIBLE/NOT_INTERRUPTIBLE`, `UNIT_SPELLCAST_CHANNEL_START/STOP/UPDATE` | `UpdateCastState()` (filtered to `unit == "target"`) |
 | Spell detection | `SPELLS_CHANGED`, `UNIT_PET` | `DetectInterruptSpell()` |
 | Cooldown swipe | `SPELL_UPDATE_COOLDOWN` | `UpdateCooldown()` + `UpdateCastState()` |
-| Interrupt usage | `UNIT_SPELLCAST_SUCCEEDED` | `OnInterruptUsed()` (filtered to `unit == "player"` + matching spellID) |
 
 ## Saved Variables
 
@@ -126,6 +125,6 @@ Built with AceConfig-3.0. Sections: General, Display (icon/border), Cooldown, Po
 
 ## Known Limitations
 
-- **Cooldown accuracy** — Base cooldown durations are hard-coded. Talents that reduce interrupt cooldowns (e.g. Rogue's Retractable Hook) will make the tracking slightly pessimistic (shows icon a bit late). No WoW API exposes the modified cooldown for interrupt spells.
 - **Single interrupt** — Only tracks one interrupt per character (first known from the ordered list). Classes with two interrupts (e.g. Druid with both Skull Bash and Solar Beam) will only track one.
 - **Pet interrupt detection** — Uses `C_SpellBook.IsSpellInSpellBook()` which covers pet spells, but pet dismissal/death between `UNIT_PET` events may cause stale state until the next detection pass.
+- **SPELL_UPDATE_COOLDOWN timing** — The frame becomes visible when `SPELL_UPDATE_COOLDOWN` fires after the interrupt cooldown expires. In rare cases where no events fire (player idle, no GCD activity), there may be a brief delay before the frame appears. Cast events on the target also trigger re-evaluation.

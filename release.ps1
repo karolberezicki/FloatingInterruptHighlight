@@ -1,7 +1,9 @@
-$tocFile = Get-ChildItem (Join-Path $PSScriptRoot "src") -Filter "*.toc" | Select-Object -First 1
+$folderName = Split-Path $PSScriptRoot -Leaf
+$srcDir = Join-Path $PSScriptRoot $folderName
+$tocFile = Get-ChildItem $srcDir -Filter "*.toc" | Select-Object -First 1
 
 if (-not $tocFile) {
-    Write-Error "No .toc file found in src"
+    Write-Error "No .toc file found in $folderName"
     exit 1
 }
 
@@ -21,7 +23,7 @@ $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "${addonName}_release_$(G
 $stageDir = Join-Path $tempDir $addonName
 
 try {
-    Copy-Item (Join-Path $PSScriptRoot "src") $stageDir -Recurse
+    Copy-Item $srcDir $stageDir -Recurse
 
     if (Test-Path $zipPath) {
         Remove-Item $zipPath

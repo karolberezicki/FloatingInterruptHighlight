@@ -50,7 +50,18 @@ local defaults = {
 }
 
 function addon:OnInitialize()
-    self.db = AceDB:New("FloatingInterruptHighlightDB", defaults, true)
+    self.db = AceDB:New("FloatingInterruptHighlightDB", defaults)
+
+    -- Migrate existing characters off the shared "Default" profile
+    -- to per-character profiles (fixes settings overwritten on char switch)
+    if self.db:GetCurrentProfile() == "Default" then
+        local charProfile = self.db.keys.char
+        self.db:SetProfile(charProfile)
+        if rawget(self.db.profiles, "Default") then
+            self.db:CopyProfile("Default")
+        end
+    end
+
     FIHFrame:OnAddonLoaded()
 
     self.db.RegisterCallback(self, "OnNewProfile", "OnProfileChanged")

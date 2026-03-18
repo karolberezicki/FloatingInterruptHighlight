@@ -289,7 +289,7 @@ function FIHFrameMixin:UpdateCooldown()
         local cdDuration = C_Spell.GetSpellCooldownDuration(self.interruptSpellID)
         if cdDuration then
             self.Cooldown.currentCooldownType = COOLDOWN_TYPE_NORMAL
-            self.Cooldown:SetCooldown(cdDuration:GetStartTime(), cdDuration:GetTotalDuration())
+            self.Cooldown:SetCooldownFromDurationObject(cdDuration)
             return
         end
     end

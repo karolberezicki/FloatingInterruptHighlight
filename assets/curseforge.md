@@ -5,13 +5,14 @@ A floating icon that displays your interrupt ability and highlights with a glow 
 ## Features
 
 - **Floating interrupt icon** — Automatically detects your class/spec interrupt spell and displays it as a movable icon
-- **Glow highlight** — Proc-style glow animation plays when your target begins an interruptible cast
+- **Glow highlight** — Proc-style glow animation plays when your target begins an interruptible cast (can be toggled off in settings)
 - **Cast timer** — Color-coded countdown timer on the overlay (red → yellow → white) shows remaining cast time
 - **Smart cooldown awareness** — The icon only appears if your interrupt will be off cooldown before the enemy cast finishes
 - **Cooldown swipe** — Optional cooldown sweep animation on the icon after using your interrupt
 - **Masque support** — Fully compatible with Masque for icon skinning
+- **Friendly target filtering** — The icon only appears for hostile targets, never for friendly casts
 - **Drag to position** — Unlock the frame to freely drag it anywhere on screen; lock it to hide until needed
-- **Profile support** — Full AceDB profile system for per-character or shared settings
+- **Profile support** — Per-character profiles by default, with full AceDB support for copying and switching
 
 ## How It Works
 
@@ -49,7 +50,7 @@ The addon automatically detects which interrupt spell you have based on your cla
 
 ## Settings
 
-- **Icon size and alpha**
+- **Icon size, alpha, and glow animation toggle**
 - **Border color and thickness** (disabled when using a Masque skin)
 - **Cooldown swipe**, edge glow, bling animation, and number visibility
 - **Frame strata** and anchor point configuration

@@ -48,7 +48,7 @@ PLAYER_LOGIN → Initialize() → register all events, DetectInterruptSpell, App
 Runtime: events → UpdateCastState / UpdateCooldown / UpdateVisibility / DetectInterruptSpell
 ```
 
-`Core.lua:OnInitialize()` creates the AceDB and calls `FIHFrame:OnAddonLoaded()` to hand the profile reference to the frame before any events fire.
+`Core.lua:OnInitialize()` creates the AceDB (per-character profiles by default) and calls `FIHFrame:OnAddonLoaded()` to hand the profile reference to the frame before any events fire. A one-time migration moves existing characters off the shared "Default" profile to per-character profiles, copying settings from "Default" if present.
 
 ## Key Patterns
 
@@ -58,10 +58,10 @@ Two pieces of combat data are protected as "secrets" (since 12.0):
 
 1. **`notInterruptible`** — returned by `UnitCastingInfo`/`UnitChannelInfo` but cannot be used in show/hide branching. Handled with `SetAlphaFromBoolean(notInterruptible, 0, alpha)` which sets alpha to 0 (invisible) for uninterruptible casts and `alpha` (visible) for interruptible casts without conditional logic.
 
-2. **Interrupt cooldown** — `C_Spell.GetSpellCooldown()` only returns the GCD (1.5s) for interrupt spells, but `C_Spell.GetSpellCooldownDuration()` returns a secret duration object with the real cooldown. The duration object's methods (`:GetStartTime()`, `:GetTotalDuration()`, `:GetRemainingDuration()`, `:EvaluateRemainingDuration(curve)`) all return secret values that can be passed to secret-aware APIs like `SetAlpha`, `SetAlphaFromBoolean`, and `Cooldown:SetCooldown`.
+2. **Interrupt cooldown** — `C_Spell.GetSpellCooldown()` only returns the GCD (1.5s) for interrupt spells, but `C_Spell.GetSpellCooldownDuration()` returns a secret duration object with the real cooldown. The duration object's methods (`:GetStartTime()`, `:GetTotalDuration()`, `:GetRemainingDuration()`, `:EvaluateRemainingDuration(curve)`) all return secret values that can be passed to secret-aware APIs like `SetAlpha`, `SetAlphaFromBoolean`, and `Cooldown:SetCooldownFromDurationObject`.
    - `CreateCdReadyCurve(alpha)` builds a curve that evaluates to `alpha` when the cooldown has ≤ `REACTION_TIME` (0.2s) remaining, and 0 when on cooldown. The user's `db.alpha` is baked into the curve because secret values cannot be used in arithmetic with regular numbers.
    - `ShowForCast()` queries `C_Spell.GetSpellCooldownDuration()` each call and evaluates remaining duration against the curve, combining both secrets (notInterruptible + cooldown readiness) via `SetAlphaFromBoolean(notInterruptible, 0, cdAlpha)`.
-   - `UpdateCooldown()` uses `cdDuration:GetStartTime()` and `:GetTotalDuration()` to drive the cooldown swipe display.
+   - `UpdateCooldown()` passes the duration object directly to `Cooldown:SetCooldownFromDurationObject(cdDuration)` to drive the cooldown swipe display.
    - The curve is rebuilt in `ApplyOptions()` whenever the user's alpha setting changes.
 
 ### Interrupt Spell Detection
@@ -78,7 +78,7 @@ Simple two-state model:
 
 ### Cast State Detection
 
-`UpdateCastState()` checks `UnitCastingInfo("target")` then `UnitChannelInfo("target")`. Uses `UnitCastingDuration`/`UnitChannelDuration` which return duration objects with `:GetRemainingDuration()` and `:EvaluateRemainingDuration()`. Nil-guarded against race conditions where the cast ends between the info and duration calls. When a cast is detected, always calls `ShowForCast()` — visibility is determined by alpha (via secrets), not by show/hide branching.
+`UpdateCastState()` first checks `UnitCanAttack("player", "target")` — friendly targets are filtered out early. Then checks `UnitCastingInfo("target")` then `UnitChannelInfo("target")`. Uses `UnitCastingDuration`/`UnitChannelDuration` which return duration objects with `:GetRemainingDuration()` and `:EvaluateRemainingDuration()`. Nil-guarded against race conditions where the cast ends between the info and duration calls. When a cast is detected, always calls `ShowForCast()` — visibility is determined by alpha (via secrets), not by show/hide branching.
 
 ### Masque Integration
 
@@ -90,7 +90,7 @@ Optional. On `OnLoad`, if Masque is present:
 
 ### Options Panel (Core.lua)
 
-Built with AceConfig-3.0. Sections: General, Display (icon/border), Cooldown, Position (strata/anchor/parent), Profiles. The border section shows a Masque override warning and hides color/thickness when Masque is active via `IsMasqueActive()`.
+Built with AceConfig-3.0. Sections: General (enabled, locked, glow toggle), Display (icon/border), Cooldown, Position (strata/anchor/parent), Profiles. The border section shows a Masque override warning and hides color/thickness when Masque is active via `IsMasqueActive()`.
 
 ## Events
 
@@ -110,6 +110,7 @@ Built with AceConfig-3.0. Sections: General, Display (icon/border), Cooldown, Po
     locked = false,
     iconSize = 48,
     alpha = 1,
+    showGlow = true,
     cooldown = { showSwipe = true, edge = true, bling = true, HideNumbers = false },
     border = { show = true, thickness = 2, color = { r = 0, g = 0, b = 0 } },
     position = { strata = 3, parent = "UIParent", point = "CENTER", relativePoint = "CENTER", X = 0, Y = 0 },

@@ -246,6 +246,12 @@ function FIHFrameMixin:UpdateCastState()
         return
     end
 
+    if not UnitCanAttack("player", "target") then
+        self:HideForCast()
+        self.GlowOverlay:Update(false)
+        return
+    end
+
     local name, notInterruptible, _
 
     name, _, _, _, _, _, _, notInterruptible = UnitCastingInfo("target")

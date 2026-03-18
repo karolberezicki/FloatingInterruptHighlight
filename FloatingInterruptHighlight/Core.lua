@@ -27,6 +27,7 @@ local defaults = {
         locked = false,
         iconSize = 48,
         alpha = 1,
+        showGlow = true,
         cooldown = {
             showSwipe = true,
             edge = true,
@@ -121,6 +122,18 @@ function addon:SetupOptions()
                 end,
                 order = 3,
                 width = 0.8,
+            },
+            showGlow = {
+                type = "toggle",
+                name = "Enable Glow",
+                desc = "Enable or disable the glow animation during interruptible casts.",
+                get = function() return addon.db.profile.showGlow end,
+                set = function(_, val)
+                    addon.db.profile.showGlow = val
+                    FIHFrame:ApplyOptions()
+                end,
+                order = 4,
+                width = 0.6,
             },
         },
     }

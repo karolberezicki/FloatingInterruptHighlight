@@ -259,7 +259,7 @@ function FIHFrameMixin:UpdateCastState()
         local duration = UnitCastingDuration("target")
         if duration then
             self:ShowForCast(notInterruptible)
-            self.GlowOverlay:Update(true, notInterruptible, duration)
+            self.GlowOverlay:Update(self.db.showGlow, notInterruptible, duration)
         else
             self:HideForCast()
             self.GlowOverlay:Update(false)
@@ -272,7 +272,7 @@ function FIHFrameMixin:UpdateCastState()
         local duration = UnitChannelDuration("target")
         if duration then
             self:ShowForCast(notInterruptible)
-            self.GlowOverlay:Update(true, notInterruptible, duration)
+            self.GlowOverlay:Update(self.db.showGlow, notInterruptible, duration)
         else
             self:HideForCast()
             self.GlowOverlay:Update(false)
@@ -398,6 +398,9 @@ function FIHFrameMixin:ApplyOptions()
 
     -- Glow overlay sizing
     self.GlowOverlay.ProcLoopFlipbook:SetSize(size * 1.4, size * 1.4)
+    if not db.showGlow then
+        self.GlowOverlay:Hide()
+    end
 
     -- Position
     local parent = _G[db.position.parent] or UIParent
